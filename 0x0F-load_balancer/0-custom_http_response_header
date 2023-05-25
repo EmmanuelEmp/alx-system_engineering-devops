@@ -1,29 +1,38 @@
-#!/usr/bin/env bash
-# Installs and sets up a simple Nginx web server on web-01 and web-02
-# Also configures the servers to return a response header containing
-# the hostname of the respective server
-ROOT_PATH="/var/www/html"
-ROOT_FILE_PATH="$ROOT_PATH/index.html"
-ERROR_FILE="/error.html"
-ERROR_FILE_PATH="$ROOT_PATH$ERROR_FILE"
-SERVER_BLOCK_PATH="/etc/nginx/sites-available/default"
-HOSTNAME="$(hostname)"
-
-REDIRECTION="\n\tlocation /redirect_me {\n\t\treturn 301 https://www.youtube.com/watch?v=QH2-TGUlwu4\$request_uri;\n\t}"
-CUSTOM_ERROR="\n\terror_page 404 $ERROR_FILE;\n\tlocation = $ERROR_FILE {\n\t\troot $ROOT_PATH;\n\t\tinternal;\n\t}\n\tadd_header X-Served-By $HOSTNAME;\n"
-
+onfigure Nginx so that it's HTTP response contains a custome header (on web-01 and web-02)
+# The name of the custom HTTP header must be X-Served-By
+# The value of the custom HTTP header must be the hostname of the server Nginx is running on
 sudo apt-get update
 sudo apt-get -y install nginx
-sudo touch "$ROOT_FILE_PATH"
-sudo touch "$ERROR_FILE_PATH"
-sudo chmod a+w "$ROOT_FILE_PATH" "$ERROR_FILE_PATH"
-echo "Hello World!" > "$ROOT_FILE_PATH"
-echo "Ceci n'est pas une page" > "$ERROR_FILE_PATH"
-sudo chmod a-w "$ROOT_FILE_PATH" "$ERROR_FILE_PATH"
 
-# Inserting changes into the folder
-sudo sed -i "46 a\ $REDIRECTION" "$SERVER_BLOCK_PATH"
-sudo sed -i "50 a\ $CUSTOM_ERROR" "$SERVER_BLOCK_PATH"
+# configure firewell to allow request through port 80
+sudo ufw allow 'Nginx HTTP'
 
-# Restart server
-sudo service nginx restart
+sudo mkdir -p /var/www/html
+
+# change permissions to allow us to easily create files in this directory
+sudo chmod -R 755 /var/www
+
+# create the index page
+echo 'Hello World!' |sudo tee /var/www/html/index.html
+
+# create a webpage for 404
+echo "Ceci n'est pas une page" |sudo tee /var/www/html/custom_404.html
+
+SERVER=$(hostname)
+
+SERVER_CONFIG=\
+"server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        root /var/www/html;
+        index index.html index.htm index.nginx-debian.html;
+        server_name _;
+        location / {
+		add_header X-Served-By '$SERVER';
+                try_files \$uri \$uri/ =404;
+        }
+}"
+
+bash -c "echo -e '$SERVER_CONFIG' > /etc/nginx/sites-enabled/default"
+
+sudo /etc/init.d/nginx restart
